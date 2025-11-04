@@ -7,7 +7,8 @@
  * of kernel entry, the start addresses of data and text segements, the start
  * address of free memory and how many memory that kernel has used.
  * */
-void print_kerninfo(void) {
+void print_kerninfo(void)
+{
     extern char etext[], edata[], end[], kern_init[];
     cprintf("Special kernel symbols:\n");
     cprintf("  entry  0x%08x (virtual)\n", kern_init);
@@ -17,12 +18,6 @@ void print_kerninfo(void) {
     cprintf("Kernel executable memory footprint: %dKB\n",
             (end - kern_init + 1023) / 1024);
 }
-
-/* *
- * print_debuginfo - read and print the stat information for the address @eip,
- * and info.eip_fn_addr should be the first address of the related function.
- * */
-void print_debuginfo(void) { panic("Not Implemented!"); }
 
 /* *
  * print_stackframe - print a list of the saved eip values from the nested
@@ -73,7 +68,7 @@ void print_debuginfo(void) { panic("Not Implemented!"); }
  * to the kernel entry, the value of ebp has been set to zero, that's the
  * boundary.
  * */
-void print_stackframe(void) {
-
+void print_stackframe(void)
+{
     panic("Not Implemented!");
 }
