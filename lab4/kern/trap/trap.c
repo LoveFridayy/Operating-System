@@ -158,7 +158,6 @@ void exception_handler(struct trapframe *tf)
         break;
     case CAUSE_LOAD_ACCESS:
         cprintf("Load access fault\n");
-
         break;
     case CAUSE_MISALIGNED_STORE:
         cprintf("AMO address misaligned\n");
