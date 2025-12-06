@@ -27,7 +27,8 @@ static void print_ticks()
 #endif
 }
 
-/* idt_init - initialize IDT to each of the entry points in kern/trap/vectors.S */
+/* idt_init - initialize IDT to each of the entry points in kern/trap/vectors.S
+ */
 void idt_init(void)
 {
     extern void __alltraps(void);
@@ -40,20 +41,13 @@ void idt_init(void)
     set_csr(sstatus, SSTATUS_SUM);
 }
 
-/* trap_in_kernel - test if trap happened in kernel */
-bool trap_in_kernel(struct trapframe *tf)
-{
-    return (tf->status & SSTATUS_SPP) != 0;
-}
-
 void print_trapframe(struct trapframe *tf)
 {
     cprintf("trapframe at %p\n", tf);
-    // cprintf("trapframe at 0x%x\n", tf);
     print_regs(&tf->gpr);
     cprintf("  status   0x%08x\n", tf->status);
     cprintf("  epc      0x%08x\n", tf->epc);
-    cprintf("  tval 0x%08x\n", tf->tval);
+    cprintf("  tval     0x%08x\n", tf->tval);
     cprintf("  cause    0x%08x\n", tf->cause);
 }
 
@@ -116,17 +110,19 @@ void interrupt_handler(struct trapframe *tf)
         cprintf("User software interrupt\n");
         break;
     case IRQ_S_TIMER:
-        // "All bits besides SSIP and USIP in the sip register are
-        // read-only." -- privileged spec1.9.1, 4.1.4, p59
-        // In fact, Call sbi_set_timer will clear STIP, or you can clear it
-        // directly.
-        // cprintf("Supervisor timer interrupt\n");
-        /* LAB3 EXERCISE1   YOUR CODE :  */
-        /*(1)设置下次时钟中断- clock_set_next_event()
-         *(2)计数器（ticks）加一
-         *(3)当计数器加到100的时候，我们会输出一个`100ticks`表示我们触发了100次时钟中断，同时打印次数（num）加一
-         * (4)判断打印次数，当打印次数为10时，调用<sbi.h>中的关机函数关机
+        /* LAB5 GRADE YOUR CODE :  */
+        /* 时间片轮转： 
+         *(1) 设置下一次时钟中断（clock_set_next_event）
+         *(2) ticks 计数器自增
+         *(3) 每 TICK_NUM 次中断（如 100 次），进行判断当前是否有进程正在运行，如果有则标记该进程需要被重新调度（current->need_resched）
          */
+        clock_set_next_event();
+        ticks++;
+        if (ticks % TICK_NUM == 0) {
+            assert(current != NULL);
+            // 设置调度标记，下次中断返回前会检查此标记并调用 schedule()
+            current->need_resched = 1;
+        }
         break;
     case IRQ_H_TIMER:
         cprintf("Hypervisor software interrupt\n");
@@ -151,7 +147,7 @@ void interrupt_handler(struct trapframe *tf)
         break;
     }
 }
-void kernel_execve_ret(struct trapframe *tf, uintptr_t kstacktop);
+
 void exception_handler(struct trapframe *tf)
 {
     int ret;
@@ -168,11 +164,9 @@ void exception_handler(struct trapframe *tf)
         break;
     case CAUSE_BREAKPOINT:
         cprintf("Breakpoint\n");
-        if (tf->gpr.a7 == 10)
-        {
+        if (tf->gpr.a7 == 10) {
             tf->epc += 4;
             syscall();
-            kernel_execve_ret(tf, current->kstack + KSTACKSIZE);
         }
         break;
     case CAUSE_MISALIGNED_LOAD:
@@ -182,20 +176,18 @@ void exception_handler(struct trapframe *tf)
         cprintf("Load access fault\n");
         break;
     case CAUSE_MISALIGNED_STORE:
-        panic("AMO address misaligned\n");
+        cprintf("AMO address misaligned\n");
         break;
     case CAUSE_STORE_ACCESS:
         cprintf("Store/AMO access fault\n");
         break;
     case CAUSE_USER_ECALL:
-        // cprintf("Environment call from U-mode\n");
-        tf->epc += 4;
-        syscall();
+        // cprintf("Environment call from U-mode\n"); // 这一行建议注释掉，否则系统调用频繁时会刷屏
+        tf->epc += 4; // 关键：跳过 ecall 指令
+        syscall();    // 关键：执行系统调用
         break;
     case CAUSE_SUPERVISOR_ECALL:
         cprintf("Environment call from S-mode\n");
-        tf->epc += 4;
-        syscall();
         break;
     case CAUSE_HYPERVISOR_ECALL:
         cprintf("Environment call from H-mode\n");
@@ -218,8 +210,23 @@ void exception_handler(struct trapframe *tf)
     }
 }
 
-static inline void trap_dispatch(struct trapframe *tf)
+/* *
+ * trap - handles or dispatches an exception/interrupt. if and when trap()
+ * returns,
+ * the code in kern/trap/trapentry.S restores the old CPU state saved in the
+ * trapframe and then uses the iret instruction to return from the exception.
+ * */
+void trap(struct trapframe *tf)
 {
+    // 在处理中断/异常前，将 current->tf 指向当前的 tf
+    // 这样 syscall() 等函数才能通过 current->tf 获取正确的寄存器状态
+    struct trapframe *old_tf = NULL;
+    if (current != NULL) {
+        old_tf = current->tf;
+        current->tf = tf;
+    }
+
+    // dispatch based on what type of trap occurred
     if ((intptr_t)tf->cause < 0)
     {
         // interrupts
@@ -230,41 +237,9 @@ static inline void trap_dispatch(struct trapframe *tf)
         // exceptions
         exception_handler(tf);
     }
-}
 
-/* *
- * trap - handles or dispatches an exception/interrupt. if and when trap() returns,
- * the code in kern/trap/trapentry.S restores the old CPU state saved in the
- * trapframe and then uses the iret instruction to return from the exception.
- * */
-void trap(struct trapframe *tf)
-{
-    // dispatch based on what type of trap occurred
-    //    cputs("some trap");
-    if (current == NULL)
-    {
-        trap_dispatch(tf);
-    }
-    else
-    {
-        struct trapframe *otf = current->tf;
-        current->tf = tf;
-
-        bool in_kernel = trap_in_kernel(tf);
-
-        trap_dispatch(tf);
-
-        current->tf = otf;
-        if (!in_kernel)
-        {
-            if (current->flags & PF_EXITING)
-            {
-                do_exit(-E_KILLED);
-            }
-            if (current->need_resched)
-            {
-                schedule();
-            }
-        }
+    // 处理完后，恢复 current->tf
+    if (current != NULL) {
+        current->tf = old_tf;
     }
 }
