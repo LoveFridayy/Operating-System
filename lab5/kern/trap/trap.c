@@ -1,20 +1,17 @@
-#include <defs.h>
-#include <mmu.h>
-#include <memlayout.h>
+#include <assert.h>
 #include <clock.h>
-#include <trap.h>
+#include <console.h>
+#include <defs.h>
+#include <kdebug.h>
+#include <memlayout.h>
+#include <mmu.h>
 #include <riscv.h>
 #include <stdio.h>
-#include <assert.h>
-#include <console.h>
+#include <trap.h>
 #include <vmm.h>
-#include <kdebug.h>
-#include <unistd.h>
 #include <syscall.h>
+#include <proc.h>
 #include <error.h>
-#include <sched.h>
-#include <sync.h>
-#include <sbi.h>
 
 #define TICK_NUM 100
 
@@ -236,6 +233,18 @@ void trap(struct trapframe *tf)
     {
         // exceptions
         exception_handler(tf);
+    }
+
+    // 检查当前进程是否需要被杀死或调度
+    if (current != NULL) {
+        // 如果当前进程被标记为 PF_EXITING，则直接退出
+        if (current->flags & PF_EXITING) {
+            do_exit(-E_KILLED);
+        }
+        // 如果当前进程的时间片用完，则让出 CPU
+        if (current->need_resched) {
+            schedule();
+        }
     }
 
     // 处理完后，恢复 current->tf
