@@ -19,10 +19,7 @@
 
 #define TICK_NUM 100
 
-static int ticks_count = 0;
-static int print_count = 0;
-
-
+extern void syscall(void); 
 static void print_ticks()
 {
     cprintf("%d ticks\n", TICK_NUM);
@@ -133,19 +130,9 @@ void interrupt_handler(struct trapframe *tf)
          * (4)判断打印次数，当打印次数为10时，调用<sbi.h>中的关机函数关机
          */
         clock_set_next_event();
-            ticks_count++;
-            if (ticks_count >= 100) {
-                print_ticks();
-                ticks_count = 0;
-                __asm__ volatile ("ebreak");//为了观察断点异常是否能正常输出，我们在这里打印ticks的同时触发一个ebreak指令。
-                __asm__ volatile ("mret");//为了观察违法指令异常是否能正常输出，我们在这里打印ticks的同时触发一个mret指令
-                print_count++;
-                if (print_count >= 10) {
-                    sbi_shutdown();
-                }
-            }
+        ticks++;
 
-        // lab6: update LAB3 steps
+        // lab6: YOUR CODE  (update LAB3 steps)
         // 在时钟中断时调用调度器的 sched_class_proc_tick 函数
         sched_class_proc_tick(current);
 

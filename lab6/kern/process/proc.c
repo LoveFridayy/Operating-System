@@ -127,9 +127,7 @@ alloc_proc(void)
          *       struct proc_struct *cptr, *yptr, *optr;     // relations between processes
          */
         proc->wait_state = 0;
-        proc->cptr = NULL;
-        proc->optr = NULL;
-        proc->yptr = NULL;
+        proc->cptr = proc->optr = proc->yptr = NULL;
 
         // LAB6:YOUR CODE (update LAB5 steps)
         /*
@@ -141,6 +139,12 @@ alloc_proc(void)
          *       uint32_t lab6_stride;                       // stride value (lab6 stride)
          *       uint32_t lab6_priority;                     // priority value (lab6 stride)
          */
+        proc->rq = NULL;
+        list_init(&(proc->run_link));
+        proc->time_slice = 0;
+        proc->lab6_run_pool.left = proc->lab6_run_pool.right = proc->lab6_run_pool.parent = NULL;
+        proc->lab6_stride = 0;
+        proc->lab6_priority = 1;
     }
     return proc;
 }
@@ -475,7 +479,8 @@ int do_fork(uint32_t clone_flags, uintptr_t stack, struct trapframe *tf)
         goto fork_out;
     }
     proc->parent = current;
-    assert(current->wait_state == 0);
+    assert(current->wait_state == 0); // 确保当前进程没有处于等待状态
+
     if (setup_kstack(proc) != 0)
     {
         goto bad_fork_cleanup_proc;
@@ -487,7 +492,7 @@ int do_fork(uint32_t clone_flags, uintptr_t stack, struct trapframe *tf)
     copy_thread(proc, stack, tf);
     proc->pid = get_pid();
     hash_proc(proc);
-    set_links(proc);
+    set_links(proc); // 设置进程关系链接，并加入 proc_list
     wakeup_proc(proc);
     ret = proc->pid;
 
@@ -497,21 +502,6 @@ int do_fork(uint32_t clone_flags, uintptr_t stack, struct trapframe *tf)
      *    -------------------
      *    update step 1: set child proc's parent to current process, make sure current process's wait_state is 0
      *    update step 5: insert proc_struct into hash_list && proc_list, set the relation links of process
-     */
-    /*
-     * proc->parent = current;
-     * assert(current->wait_state == 0);  // 新增这一行
-     * 这确保了父进程在创建子进程时不处于等待状态。
-     *
-     * //删除这两行
-     * list_add(&proc_list, &(proc->list_link));
-     * nr_process++; 
-     *
-     * set_links(proc); //替换为set_links()
-     * set_links()会完成如下工作：
-     * 1、将进程添加到proc_list链表中
-     * 2、设置进程间的父子关系指针（cptr、optr、yptr）
-     * 3、递增进程计数器 nr_process
      */
 
 fork_out:
@@ -749,17 +739,12 @@ load_icode(unsigned char *binary, size_t size)
      *          tf_eip should be the entry point of this binary program (elf->e_entry)
      *          tf_eflags should be set to enable computer to produce Interrupt
      */
-    // 设置用户栈顶指针
     tf->gpr.sp = USTACKTOP;
-
-    // 设置程序入口点（ELF 文件的入口地址）
     tf->epc = elf->e_entry;
-     
-    // 设置状态寄存器：
+
     // SSTATUS_SPP (Supervisor Previous Privilege): 设置为0，表示之前的特权级是User Mode，sret后将回到User Mode
     // SSTATUS_SPIE (Supervisor Previous Interrupt Enable): 设置为1，表示中断使能，允许用户态响应中断
-    tf->status = sstatus & ~SSTATUS_SPP;  // 清除 SPP，确保返回用户模式
-    tf->status |= SSTATUS_SPIE;  
+    tf->status = (read_csr(sstatus) & ~SSTATUS_SPP) | SSTATUS_SPIE;
 
     ret = 0;
 out:
