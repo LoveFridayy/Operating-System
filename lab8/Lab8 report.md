@@ -918,3 +918,11 @@ load_icode 主要是将文件加载到内存中执行,从上面的注释可知�
 - 发生错误还需要进行错误处理。
 
 当然—旦发生错误还需要进行错误处理。
+
+
+
+### 实验结果
+
+实验结果如图所示
+
+![image-20260106175746222](C:\Users\Administrator\AppData\Roaming\Typora\typora-user-images\image-20260106175746222.png)
