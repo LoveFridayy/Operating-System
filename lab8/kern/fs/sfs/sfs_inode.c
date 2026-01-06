@@ -600,7 +600,61 @@ sfs_io_nolock(struct sfs_fs *sfs, struct sfs_inode *sin, void *buf, off_t offset
 	 *       NOTICE: useful function: sfs_bmap_load_nolock, sfs_buf_op	
 	*/
 
-    
+    // (1) 处理第一个块的未对齐部分
+    if ((blkoff = offset % SFS_BLKSIZE) != 0) {
+        // 计算需要读写的大小：如果有多个块，读到第一个块的末尾；否则读到endpos
+        size = (nblks != 0) ? (SFS_BLKSIZE - blkoff) : (endpos - offset);
+        // 获取第一个块的磁盘块号
+        if ((ret = sfs_bmap_load_nolock(sfs, sin, blkno, &ino)) != 0) {
+            goto out;
+        }
+        // 从块的blkoff位置开始读写size字节的数据
+        if ((ret = sfs_buf_op(sfs, buf, size, ino, blkoff)) != 0) {
+            goto out;
+        }
+        // 更新已处理的数据量和缓冲区指针
+        alen += size;
+        // 如果nblks为0，说明只有一个块，且已处理完，可以直接跳到out
+        if (nblks == 0) {
+            goto out;
+        }
+        buf += size;
+        blkno++;
+        nblks--;
+    }
+
+    // (2) 处理中间对齐的完整块
+    if (nblks > 0) {
+        // 逐块处理（也可以一次处理多个块，但逐块处理更安全）
+        for (uint32_t i = 0; i < nblks; i++) {
+            // 获取当前块的磁盘块号
+            if ((ret = sfs_bmap_load_nolock(sfs, sin, blkno, &ino)) != 0) {
+                goto out;
+            }
+            // 读写整个块
+            if ((ret = sfs_block_op(sfs, buf, ino, 1)) != 0) {
+                goto out;
+            }
+            // 更新已处理的数据量和缓冲区指针
+            alen += SFS_BLKSIZE;
+            buf += SFS_BLKSIZE;
+            blkno++;
+        }
+    }
+
+    // (3) 处理最后一个块的未对齐部分
+    if ((size = endpos % SFS_BLKSIZE) != 0) {
+        // 获取最后一个块的磁盘块号
+        if ((ret = sfs_bmap_load_nolock(sfs, sin, blkno, &ino)) != 0) {
+            goto out;
+        }
+        // 从块的开始位置读写size字节的数据
+        if ((ret = sfs_buf_op(sfs, buf, size, ino, 0)) != 0) {
+            goto out;
+        }
+        // 更新已处理的数据量
+        alen += size;
+    }
 
 out:
     *alenp = alen;
